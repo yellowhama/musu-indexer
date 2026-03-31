@@ -2,12 +2,17 @@
 
 High-performance codebase indexer and MCP (Model Context Protocol) server powered by Go and SQLite FTS5.
 
+This repository contains the complete toolset:
+1. **The Scanner & Indexer (Go Engine)**: An ultra-fast, parallelized filesystem scanner and parser (`indexer_src/`).
+2. **The Database Manager (Python)**: Orchestrates the Go engine and manages the `.musu_dev.db` SQLite database using `WAL` mode and 3GB memory mapping.
+3. **The MCP Server (Python)**: Exposes the indexed context directly to AI assistants (Claude, Gemini, etc.) via tools like `search_codebase` and `sync_workspace`.
+
 ## Features
-- **Ultra-fast Parallel Indexing**: Uses a compiled Go binary (`musu-indexer`) to scan and index thousands of files in seconds.
+- **Ultra-fast Parallel Indexing**: Uses a compiled Go binary (`musu-indexer`) to scan and index thousands of files in seconds using a Syncthing-style Producer-Consumer lock-free architecture.
 - **Incremental Sync**: Only updates modified files using stable filesystem keys.
 - **FTS5 Search**: Provides deep contextual search across code symbols, document sections, and raw text.
 - **MCP Integration**: Exposes `sync_workspace`, `search_codebase`, and `log_action` tools directly to AI assistants.
-- **Cross-Platform & WSL2 Optimized**: Includes both Linux and Windows native binaries.
+- **Cross-Platform & WSL2 Optimized**: Includes both Linux and Windows native binaries out-of-the-box.
 
 ## 🚀 Special Note for Windows & WSL2 Users
 
@@ -41,16 +46,18 @@ Add the following to your MCP client configuration (e.g., `claude_desktop_config
 }
 ```
 
-Or you can run it directly via Python module:
-```json
-{
-  "mcpServers": {
-    "musu-indexer": {
-      "command": "python",
-      "args": ["-m", "musu_indexer.server"]
-    }
-  }
-}
+## Building the Go Engine from Source (Optional)
+We provide pre-compiled binaries in the `bin/` directory. However, if you wish to modify the parser or compile it for a different architecture, you can build the Go engine from the provided source:
+
+```bash
+cd indexer_src
+go mod tidy
+
+# For Linux/macOS
+go build -o ../bin/musu-indexer-linux main.go
+
+# For Windows (Cross-compilation from Linux)
+GOOS=windows GOARCH=amd64 go build -o ../bin/musu-indexer.exe main.go
 ```
 
 ## How it Works
