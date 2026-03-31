@@ -3,6 +3,7 @@ import os
 import time
 import subprocess
 from pathlib import Path
+from .query_expander import QueryExpander
 
 # Dynamically calculate the path to the bin folder inside the package
 PACKAGE_ROOT = Path(__file__).parent
@@ -149,13 +150,82 @@ def sync_core(project_root: Path, scope: str = "all") -> str:
     
     return f"Sync Complete! Indexed {len(changed_list)} files, {reused_count} unchanged. Time: {time.time()-start_time:.2f}s"
 
-def search_index(project_root: Path, query: str, limit: int = 15) -> list[dict]:
-    """Execute a Full-Text Search (FTS5) against the index."""
+def ingest_core(project_root: Path, dirty_paths: list[str]) -> str:
+    """[Phase 1] Partially reindex only the specified dirty files (Auto-Ingest)."""
+    if not dirty_paths:
+        return "No files to ingest."
+
+    db_path = str(project_root / ".musu_dev.db")
+    if not os.path.exists(db_path):
+        init_db(project_root)
+
+    start_time = time.time()
+    is_wsl = False
+    try:
+        with open("/proc/version", "r") as f:
+            if "microsoft" in f.read().lower(): is_wsl = True
+    except: pass
+
+    tmp_dir = project_root / "work" / "tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    list_file = tmp_dir / "sync_targets.txt"
+    
+    normalized_paths = [p.replace('\\', '/') for p in dirty_paths]
+    with open(list_file, "w") as f: 
+        f.write("\n".join(normalized_paths))
+
+    if is_wsl and str(project_root).startswith("/mnt/") and os.path.exists(WIN_BIN):
+        try:
+            win_db = subprocess.check_output(["wslpath", "-w", db_path], encoding='utf-8').strip()
+            win_root = subprocess.check_output(["wslpath", "-w", str(project_root)], encoding='utf-8').strip()
+            win_list = subprocess.check_output(["wslpath", "-w", str(list_file)], encoding='utf-8').strip()
+            cmd = [WIN_BIN, "index", win_db, win_root, win_list]
+        except: 
+            cmd = [LINUX_BIN, "index", db_path, str(project_root), str(list_file)]
+    else:
+        cmd = [LINUX_BIN, "index", db_path, str(project_root), str(list_file)]
+
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+
+    # [Phase 4] Auto-Tagging System (Post-processing)
     conn = get_db(project_root)
-    safe_query = f'"{query}"'
+    cursor = conn.cursor()
+    cursor.execute("UPDATE files SET category = 'spec' WHERE path LIKE '%spec%' OR path LIKE '%docs/%'")
+    cursor.execute("UPDATE files SET category = 'report' WHERE path LIKE '%report%'")
+    cursor.execute("UPDATE files SET category = 'log' WHERE path LIKE '%log%'")
+    cursor.execute("UPDATE files SET category = 'reference' WHERE path LIKE '%reference%'")
+    
+    cursor.execute("INSERT INTO work_log (action, details, status) VALUES ('ingest', ?, 'success')", 
+                   (f"Auto-Ingested {len(dirty_paths)} files",))
+    conn.commit()
+    conn.close()
+    
+    return f"Ingest Complete! Processed {len(dirty_paths)} files in {time.time()-start_time:.2f}s"
+
+def get_recent(project_root: Path, limit: int = 10) -> list[dict]:
+    """[Phase 3] Fetch the most recently modified or indexed files."""
+    conn = get_db(project_root)
+    res = conn.execute(
+        "SELECT path, category, datetime(last_modified, 'unixepoch', 'localtime') as mod_time FROM files ORDER BY last_modified DESC LIMIT ?",
+        (limit,)
+    ).fetchall()
+    results = [{"path": r['path'], "category": r['category'], "modified": r['mod_time']} for r in res]
+    conn.close()
+    return results
+
+def search_index(project_root: Path, query: str, limit: int = 15) -> list[dict]:
+    """Execute a Full-Text Search (FTS5) against the index with smart query expansion."""
+    conn = get_db(project_root)
+    # 엘로우하마님의 AI-Free 스마트 쿼리 확장기 적용
+    fts_query = QueryExpander.build_fts_query(query, max_terms=6)
+    
+    # 쿼리가 필터링되어 완전히 비어버린 경우 예외 처리
+    if not fts_query:
+        return []
+
     res = conn.execute(
         "SELECT path, title, type, snippet(search_index, -1, '<b>', '</b>', '...', 32) as match_snippet FROM search_index WHERE content MATCH ? LIMIT ?", 
-        (safe_query, limit)
+        (fts_query, limit)
     ).fetchall()
     
     results = [{"path": r['path'], "title": r['title'], "type": r['type'], "snippet": r['match_snippet']} for r in res]

@@ -1,5 +1,5 @@
 from mcp.server.fastmcp import FastMCP
-from .core import sync_core, search_index, log_activity, find_project_root
+from .core import sync_core, search_index, log_activity, find_project_root, get_recent
 from pathlib import Path
 
 # Create the MCP Server instance
@@ -34,6 +34,25 @@ async def search_codebase(query: str, limit: int = 15) -> str:
         output = [f"Found {len(results)} matches for '{query}':"]
         for r in results:
             output.append(f"[{r['type'].upper()}] {r['path']} > {r['title']}\n  ...{r['snippet']}...")
+        return "\n".join(output)
+    except Exception as e:
+        return f"Database error. Please run sync_workspace first. ({e})"
+
+@mcp.tool()
+async def get_recent_results(limit: int = 10) -> str:
+    """
+    Fetch the most recently created or modified files in the project.
+    Use this to quickly check what was just generated or updated (e.g. specs, logs).
+    """
+    project_root = find_project_root()
+    try:
+        results = get_recent(project_root, limit=limit)
+        if not results:
+            return "No recent files found."
+        
+        output = [f"Found {len(results)} recent files:"]
+        for r in results:
+            output.append(f"[{r['category'].upper()}] {r['path']} (Modified: {r['modified']})")
         return "\n".join(output)
     except Exception as e:
         return f"Database error. Please run sync_workspace first. ({e})"

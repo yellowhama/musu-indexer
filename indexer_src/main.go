@@ -21,6 +21,7 @@ type Section struct{ Title string; Level int; Content string }
 type IndexTask struct {
 	Path    string
 	Size    int
+	ModTime float64
 	Content string
 	Syms    []Symbol
 	Secs    []Section
@@ -157,11 +158,13 @@ func doIndex(dbPath, root, listFile string) {
 		go func() {
 			defer parseWg.Done()
 			for rel := range tasks {
+				info, err := os.Stat(filepath.Join(root, rel))
+				if err != nil { continue }
 				data, err := os.ReadFile(filepath.Join(root, rel))
 				if err != nil { continue }
 				content := string(data)
 				syms, secs := parseFile(rel, content)
-				parsedChan <- IndexTask{Path: rel, Size: len(data), Content: content, Syms: syms, Secs: secs}
+				parsedChan <- IndexTask{Path: rel, Size: len(data), ModTime: float64(info.ModTime().Unix()), Content: content, Syms: syms, Secs: secs}
 			}
 		}()
 	}
@@ -182,7 +185,8 @@ func doIndex(dbPath, root, listFile string) {
 
 	for t := range parsedChan {
 		category := strings.Split(t.Path, "/")[0]
-		tx.Exec("INSERT OR REPLACE INTO files (path, size, last_modified, category, indexed_at) VALUES (?, ?, ?, ?, datetime(\"now\"))", t.Path, t.Size, 0, category)
+		// fmt.Printf("DEBUG: %s mod time is %f\n", t.Path, t.ModTime)
+		tx.Exec("INSERT OR REPLACE INTO files (path, size, last_modified, category, indexed_at) VALUES (?, ?, ?, ?, datetime(\"now\"))", t.Path, t.Size, t.ModTime, category)
 		tx.Exec("DELETE FROM doc_sections WHERE file_path = ?; DELETE FROM code_symbols WHERE file_path = ?; DELETE FROM search_index WHERE path = ?;", t.Path, t.Path, t.Path)
 		
 		short := t.Content; if len(short) > 2000 { short = short[:2000] }

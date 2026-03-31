@@ -1,8 +1,9 @@
 import argparse
 import sys
 from pathlib import Path
-from .core import sync_core, search_index, log_activity, find_project_root
+from .core import sync_core, search_index, log_activity, find_project_root, get_recent
 from .server import mcp
+from .watcher import start_watcher
 
 def main():
     parser = argparse.ArgumentParser(description="Musu Indexer: High-performance codebase indexer and MCP server")
@@ -15,10 +16,18 @@ def main():
     sync_parser = subparsers.add_parser("sync", help="Synchronize the local SQLite database")
     sync_parser.add_argument("--scope", type=str, default="all", choices=["all", "code", "doc"], help="Scope of the sync")
 
+    # Command: watch
+    watch_parser = subparsers.add_parser("watch", help="Start the Auto-Ingest Daemon to watch for file changes")
+    watch_parser.add_argument("--debounce", type=int, default=2, help="Debounce time in seconds")
+
     # Command: search
     search_parser = subparsers.add_parser("search", help="Search the codebase using FTS5")
     search_parser.add_argument("query", type=str, help="The search query")
     search_parser.add_argument("--limit", type=int, default=15, help="Maximum number of results")
+
+    # Command: recent
+    recent_parser = subparsers.add_parser("recent", help="View recently created or modified files")
+    recent_parser.add_argument("--limit", type=int, default=10, help="Maximum number of results")
 
     # Command: log
     log_parser = subparsers.add_parser("log", help="Log an activity")
@@ -26,7 +35,7 @@ def main():
 
     args = parser.parse_args()
 
-    # Default to MCP if no args provided (useful for standard MCP client configs)
+    # Default to MCP if no args provided
     if args.command is None or args.command == "mcp":
         mcp.run()
         return
@@ -38,6 +47,9 @@ def main():
         result = sync_core(project_root, scope=args.scope)
         print(result)
 
+    elif args.command == "watch":
+        start_watcher(project_root, debounce_seconds=args.debounce)
+
     elif args.command == "search":
         results = search_index(project_root, args.query, limit=args.limit)
         if not results:
@@ -47,6 +59,15 @@ def main():
             for r in results:
                 print(f"[{r['type'].upper()}] {r['path']} > {r['title']}")
                 print(f"    ...{r['snippet']}...\n")
+
+    elif args.command == "recent":
+        results = get_recent(project_root, limit=args.limit)
+        if not results:
+            print("No recent files found.")
+        else:
+            print(f"\n🕒 Found {len(results)} recent files:")
+            for r in results:
+                print(f"[{r['category'].upper()}] {r['path']} (Modified: {r['modified']})")
 
     elif args.command == "log":
         log_activity(project_root, args.message)

@@ -13,7 +13,8 @@ authors = [
   { name = "yellowhama", email = "yellowhama@users.noreply.github.com" },
 ]
 dependencies = [
-    "mcp>=1.0.0"
+    "mcp>=1.0.0",
+    "watchdog>=3.0.0"
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
