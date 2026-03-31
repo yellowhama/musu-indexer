@@ -31,34 +31,37 @@ This package requires Python 3.10+ and the `mcp` library.
    pip install -e .
    ```
 
-## Configuring in AI Clients (Claude Desktop / Gemini)
+## 3 Ways to Use Musu Indexer
+
+This project is built as a complete ecosystem, offering three distinct ways to interact with the engine:
+
+### 1. As an MCP Server (For AI Assistants)
+Expose the indexed context directly to Claude, Gemini, and other MCP-compatible clients. The server runs in the background and responds to tool calls (`search_codebase`, `sync_workspace`).
 
 Add the following to your MCP client configuration (e.g., `claude_desktop_config.json`):
-
 ```json
 {
   "mcpServers": {
     "musu-indexer": {
       "command": "musu-indexer",
-      "args": []
+      "args": ["mcp"]
     }
   }
 }
 ```
 
-## Building the Go Engine from Source (Optional)
-We provide pre-compiled binaries in the `bin/` directory. However, if you wish to modify the parser or compile it for a different architecture, you can build the Go engine from the provided source:
-
+### 2. As an "Everything" CLI (For Humans)
+You don't need an AI to benefit from ultra-fast FTS5 searches. Use the CLI tool directly in your terminal:
 ```bash
-cd indexer_src
-go mod tidy
+# Sync the current project
+musu-indexer sync
 
-# For Linux/macOS
-go build -o ../bin/musu-indexer-linux main.go
+# Search the codebase instantly
+musu-indexer search "VRAM configuration"
 
-# For Windows (Cross-compilation from Linux)
-GOOS=windows GOARCH=amd64 go build -o ../bin/musu-indexer.exe main.go
+# Log an important milestone
+musu-indexer log "Refactored the parallel scanning logic"
 ```
 
-## How it Works
-When a tool like `sync_workspace` is called, the Python MCP server dynamically locates the `musu-indexer-linux` (or `.exe`) binary in the `bin/` directory, executes the high-speed scan, and builds a `.musu_dev.db` SQLite database at your project root. The `search_codebase` tool then queries this database to provide context to the AI.
+### 3. As an AI Skill (For CLI Agents)
+If you are using terminal-based AI agents (like Gemini CLI), you can load the `SKILL.md` file included in this repository. This instructs the AI on exactly how to use the `musu-indexer` CLI commands to gather context autonomously, replacing slow and error-prone `grep` searches with instant database queries.

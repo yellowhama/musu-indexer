@@ -9,4 +9,4 @@ dependencies = [
 ]
 
 [project.scripts]
-musu-indexer = "musu_indexer.server:main"
+musu-indexer = "musu_indexer.cli:main"
