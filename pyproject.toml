@@ -1,0 +1,12 @@
+[project]
+name = "musu-indexer"
+version = "0.1.0"
+description = "High-performance codebase indexer and MCP server powered by Go and SQLite FTS5"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0.0"
+]
+
+[project.scripts]
+musu-indexer = "musu_indexer.server:main"
