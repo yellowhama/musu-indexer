@@ -1,12 +1,41 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "musu-indexer"
 version = "0.1.0"
 description = "High-performance codebase indexer and MCP server powered by Go and SQLite FTS5"
 readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "yellowhama", email = "yellowhama@users.noreply.github.com" },
+]
 dependencies = [
     "mcp>=1.0.0"
 ]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/yellowhama/musu-indexer"
+Repository = "https://github.com/yellowhama/musu-indexer"
 
 [project.scripts]
 musu-indexer = "musu_indexer.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/musu_indexer"]
+include = [
+  "src/musu_indexer/bin/*",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src",
+  "/indexer_src",
+]

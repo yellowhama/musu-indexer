@@ -21,19 +21,9 @@ If you are a Windows user developing inside WSL2 (Ubuntu, Debian, etc.) while yo
 **Musu Indexer automatically solves this!**
 When it detects a WSL2 environment and a mounted path, the Python server intelligently bypasses the slow bridge by executing the native Windows binary (`musu-indexer.exe`) directly via `wslpath`. This guarantees ultra-fast native disk I/O speeds even while you work entirely inside Linux!
 
-## Installation
+## Installation & Usage
 
-This package requires Python 3.10+ and the `mcp` library.
-
-1. Navigate to this directory.
-2. Install via pip:
-   ```bash
-   pip install -e .
-   ```
-
-## 3 Ways to Use Musu Indexer
-
-This project is built as a complete ecosystem, offering three distinct ways to interact with the engine:
+The easiest and recommended way to use this tool is via `uvx` (or `pipx`), which automatically pulls the latest package from PyPI and runs it in an isolated environment without messing up your system packages.
 
 ### 1. As an MCP Server (For AI Assistants)
 Expose the indexed context directly to Claude, Gemini, and other MCP-compatible clients. The server runs in the background and responds to tool calls (`search_codebase`, `sync_workspace`).
@@ -43,8 +33,8 @@ Add the following to your MCP client configuration (e.g., `claude_desktop_config
 {
   "mcpServers": {
     "musu-indexer": {
-      "command": "musu-indexer",
-      "args": ["mcp"]
+      "command": "uvx",
+      "args": ["musu-indexer", "mcp"]
     }
   }
 }
@@ -54,13 +44,13 @@ Add the following to your MCP client configuration (e.g., `claude_desktop_config
 You don't need an AI to benefit from ultra-fast FTS5 searches. Use the CLI tool directly in your terminal:
 ```bash
 # Sync the current project
-musu-indexer sync
+uvx musu-indexer sync
 
 # Search the codebase instantly
-musu-indexer search "VRAM configuration"
+uvx musu-indexer search "VRAM configuration"
 
 # Log an important milestone
-musu-indexer log "Refactored the parallel scanning logic"
+uvx musu-indexer log "Refactored the parallel scanning logic"
 ```
 
 ### 3. As an AI Skill (For CLI Agents)

@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 
 # Dynamically calculate the path to the bin folder inside the package
-PACKAGE_ROOT = Path(__file__).parent.parent.parent
+PACKAGE_ROOT = Path(__file__).parent
 LINUX_BIN = str(PACKAGE_ROOT / "bin" / "musu-indexer-linux")
 WIN_BIN = str(PACKAGE_ROOT / "bin" / "musu-indexer.exe")
 
