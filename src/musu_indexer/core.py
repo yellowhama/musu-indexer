@@ -3,6 +3,7 @@ import os
 import time
 import subprocess
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 from .query_expander import QueryExpander
 
 # Dynamically calculate the path to the bin folder inside the package
@@ -42,50 +43,66 @@ def init_db(project_root: Path):
     conn.commit()
     conn.close()
 
-def sync_bottom_up(project_root: Path, scope: str = "all") -> str:
-    """[New Strategy] Map directories first, then conquer from deepest subfolders upward."""
+def sync_bottom_up(project_root: Path, scope: str = "all", max_workers: int = 8) -> str:
+    """[Parallel Strategy] Map directories and conquer subfolders in parallel batches."""
     print(f"🗺️  [1/3] Mapping project structure: {project_root}")
     start_time = time.time()
     
-    # DB 초기화 검증
+    # Ensure DB
     db_path = str(project_root / ".musu_dev.db")
     if not os.path.exists(db_path):
         init_db(project_root)
 
-    # 1. 지도 그리기 (폴더 목록만 추출)
+    # 1. Map: Get directory list
     cmd = [LINUX_BIN, "dirs", str(project_root)]
     output = subprocess.check_output(cmd, encoding='utf-8', errors='ignore')
     dirs = [d.strip() for d in output.splitlines() if d.strip()]
     
-    # 2. 가장 깊은 폴더부터 정렬 (Bottom-Up)
-    # 경로 조각(/)이 많은 순서대로 정렬
+    # 2. Sort: Deepest first (Bottom-Up)
     dirs.sort(key=lambda x: x.count('/'), reverse=True)
-    dirs.insert(0, ".") # 마지막에 루트 폴더 추가
+    dirs.insert(0, ".") 
     
-    print(f"📂 Found {len(dirs)} directories. Starting bottom-up conquest...")
+    print(f"📂 Found {len(dirs)} directories. Starting parallel conquest (Workers: {max_workers})...")
 
+    # 3. Parallel Conquer (Ingest files folder-by-folder in parallel)
     total_files = 0
-    # 3. 폴더별 정밀 타격
-    for i, rel_dir in enumerate(dirs):
-        full_dir = project_root / rel_dir
-        # 해당 폴더 '직계' 파일들만 찾기 (재귀 X)
-        target_files = []
-        try:
-            for entry in os.scandir(full_dir):
-                if entry.is_file():
-                    ext = Path(entry.name).suffix
-                    if ext in {'.rs', '.ts', '.tsx', '.md', '.py', '.go', '.json', '.toml', '.sql'}:
-                        rel_file_path = str(Path(rel_dir) / entry.name).replace('\\', '/')
-                        if rel_file_path.startswith("./"): rel_file_path = rel_file_path[2:]
-                        target_files.append(rel_file_path)
-        except Exception: continue
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        results = list(executor.map(lambda d: process_folder_no_tag(project_root, d), dirs))
+        total_files = sum(results)
 
-        if target_files:
-            print(f"  [{i+1}/{len(dirs)}] Ingesting {len(target_files)} files in: {rel_dir}")
-            ingest_core(project_root, target_files, start_time=None)
-            total_files += len(target_files)
+    # 4. Global Auto-Tagging (One single bulk update to avoid DB locks)
+    print("  [4/4] Performing global auto-tagging...")
+    apply_global_tags(project_root)
 
-    return f"🚀 Conquest Complete! Successfully indexed {total_files} files across {len(dirs)} folders in {time.time()-start_time:.2f}s"
+    return f"🚀 Parallel Conquest Complete! Successfully indexed {total_files} files across {len(dirs)} folders in {time.time()-start_time:.2f}s"
+
+def process_folder_no_tag(project_root, rel_dir):
+    full_dir = project_root / rel_dir
+    target_files = []
+    try:
+        for entry in os.scandir(full_dir):
+            if entry.is_file():
+                ext = Path(entry.name).suffix
+                if ext in {'.rs', '.ts', '.tsx', '.md', '.py', '.go', '.json', '.toml', '.sql'}:
+                    rel_file_path = str(Path(rel_dir) / entry.name).replace('\\', '/')
+                    if rel_file_path.startswith("./"): rel_file_path = rel_file_path[2:]
+                    target_files.append(rel_file_path)
+    except Exception: return 0
+
+    if target_files:
+        ingest_core(project_root, target_files, start_time=None, auto_tag=False)
+        return len(target_files)
+    return 0
+
+def apply_global_tags(project_root: Path):
+    conn = get_db(project_root)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE files SET category = 'spec' WHERE path LIKE '%spec%' OR path LIKE '%docs/%'")
+    cursor.execute("UPDATE files SET category = 'report' WHERE path LIKE '%report%'")
+    cursor.execute("UPDATE files SET category = 'log' WHERE path LIKE '%log%'")
+    cursor.execute("UPDATE files SET category = 'reference' WHERE path LIKE '%reference%'")
+    conn.commit()
+    conn.close()
 
 def sync_core(project_root: Path, scope: str = "all") -> str:
     """Core synchronization logic using Linux native engine for maximum stability in WSL."""
@@ -156,7 +173,7 @@ def sync_core(project_root: Path, scope: str = "all") -> str:
     # 3. Precision Indexing (Go Engine)
     return ingest_core(project_root, changed_list, start_time, reused_count)
 
-def ingest_core(project_root: Path, dirty_paths: list[str], start_time: float = None, reused_count: int = 0) -> str:
+def ingest_core(project_root: Path, dirty_paths: list[str], start_time: float = None, reused_count: int = 0, auto_tag: bool = True) -> str:
     """Partially reindex only the specified dirty files (Auto-Ingest)."""
     if not dirty_paths:
         return "No files to ingest."
@@ -178,25 +195,24 @@ def ingest_core(project_root: Path, dirty_paths: list[str], start_time: float = 
 
     cmd = [LINUX_BIN, "index", db_path, str(project_root), str(list_file)]
 
-    print(f"  [3/3] Rematching {len(normalized_paths)} entries using Go Engine...")
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8')
     for line in process.stdout:
-        print(line, end='', flush=True)
+        pass # Silence progress during parallel runs
     process.wait()
 
     # [Phase 4] Auto-Tagging System (Post-processing)
-    print("  [4/4] Applying auto-tags and finalizing...")
-    conn = get_db(project_root)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE files SET category = 'spec' WHERE path LIKE '%spec%' OR path LIKE '%docs/%'")
-    cursor.execute("UPDATE files SET category = 'report' WHERE path LIKE '%report%'")
-    cursor.execute("UPDATE files SET category = 'log' WHERE path LIKE '%log%'")
-    cursor.execute("UPDATE files SET category = 'reference' WHERE path LIKE '%reference%'")
-    
-    cursor.execute("INSERT INTO work_log (action, details, status) VALUES ('sync_or_ingest', ?, 'success')", 
-                   (f"Processed {len(dirty_paths)} files, {reused_count} reused",))
-    conn.commit()
-    conn.close()
+    if auto_tag:
+        conn = get_db(project_root)
+        cursor = conn.cursor()
+        cursor.execute("UPDATE files SET category = 'spec' WHERE path LIKE '%spec%' OR path LIKE '%docs/%'")
+        cursor.execute("UPDATE files SET category = 'report' WHERE path LIKE '%report%'")
+        cursor.execute("UPDATE files SET category = 'log' WHERE path LIKE '%log%'")
+        cursor.execute("UPDATE files SET category = 'reference' WHERE path LIKE '%reference%'")
+        
+        cursor.execute("INSERT INTO work_log (action, details, status) VALUES ('sync_or_ingest', ?, 'success')", 
+                    (f"Processed {len(dirty_paths)} files, {reused_count} reused",))
+        conn.commit()
+        conn.close()
     
     return f"Done! Indexed {len(dirty_paths)} files in {time.time()-start_time:.2f}s"
 
