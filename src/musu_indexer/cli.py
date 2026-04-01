@@ -1,7 +1,7 @@
 import argparse
 import sys
 from pathlib import Path
-from .core import sync_core, search_index, log_activity, find_project_root, get_recent
+from .core import sync_core, search_index, log_activity, find_project_root, get_recent, sync_bottom_up
 from .server import mcp
 from .watcher import start_watcher
 
@@ -9,12 +9,16 @@ def main():
     parser = argparse.ArgumentParser(description="Musu Indexer: High-performance codebase indexer and MCP server")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
+    # Command: sync (Standard)
+    sync_parser = subparsers.add_parser("sync", help="Standard incremental sync")
+    sync_parser.add_argument("--scope", type=str, default="all", choices=["all", "code", "doc"], help="Scope of the sync")
+
+    # Command: sync-map (Bottom-Up Strategy)
+    map_parser = subparsers.add_parser("sync-map", help="Deep-first bottom-up sync strategy for massive projects")
+    map_parser.add_argument("--scope", type=str, default="all", help="Scope of the sync")
+
     # Command: mcp (Run as MCP server)
     mcp_parser = subparsers.add_parser("mcp", help="Run the MCP server (stdio mode)")
-
-    # Command: sync
-    sync_parser = subparsers.add_parser("sync", help="Synchronize the local SQLite database")
-    sync_parser.add_argument("--scope", type=str, default="all", choices=["all", "code", "doc"], help="Scope of the sync")
 
     # Command: watch
     watch_parser = subparsers.add_parser("watch", help="Start the Auto-Ingest Daemon to watch for file changes")
@@ -45,6 +49,11 @@ def main():
     if args.command == "sync":
         print(f"Syncing project at: {project_root}")
         result = sync_core(project_root, scope=args.scope)
+        print(result)
+
+    elif args.command == "sync-map":
+        print(f"Executing Bottom-Up Sync at: {project_root}")
+        result = sync_bottom_up(project_root, scope=args.scope)
         print(result)
 
     elif args.command == "watch":

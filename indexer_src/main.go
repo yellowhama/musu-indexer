@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -89,18 +90,22 @@ func parseFile(path, content string) ([]Symbol, []Section) {
 	return syms, secs
 }
 
-// 1. Syncthing-style 병렬 스캐너
+// 1. Syncthing-style 병렬 스캐너 (Semaphore 적용)
 func doScan(root string) {
-	ignore := map[string]bool{"node_modules": true, "target": true, ".git": true, "dist": true, "build": true, ".vibe": true, "venv": true, "__pycache__": true}
+	ignore := map[string]bool{"node_modules": true, "target": true, ".git": true, "dist": true, "build": true, ".vibe": true, "venv": true, ".venv": true, "env": true, "__pycache__": true, ".cargo": true, ".rustup": true, ".claude": true, "runs": true, ".cache": true, "logs": true}
 	targets := map[string]bool{".rs": true, ".ts": true, ".tsx": true, ".md": true, ".py": true, ".go": true, ".json": true, ".toml": true, ".sql": true}
 
 	var wg sync.WaitGroup
 	results := make(chan string, 1000)
-
-	// 병렬 탐색기 시작
+	sem := make(chan struct{}, 64) // 동시 디렉토리 스캔 64개로 제한
+	
+	var fileCount int64
 	var walkDir func(dir string)
 	walkDir = func(dir string) {
 		defer wg.Done()
+		sem <- struct{}{}
+		defer func() { <-sem }()
+
 		entries, err := os.ReadDir(dir)
 		if err != nil { return }
 		
@@ -115,6 +120,11 @@ func doScan(root string) {
 				if info, err := d.Info(); err == nil {
 					rel, _ := filepath.Rel(root, fullPath)
 					results <- fmt.Sprintf("%s|%d|%d", filepath.ToSlash(rel), info.ModTime().Unix(), info.Size())
+					
+					newCount := atomic.AddInt64(&fileCount, 1)
+					if newCount % 10000 == 0 {
+						fmt.Fprintf(os.Stderr, "  🔍 Scanning... %d files found\n", newCount)
+					}
 				}
 			}
 		}
@@ -215,10 +225,27 @@ func doIndex(dbPath, root, listFile string) {
 	time.Sleep(100 * time.Millisecond) // WAL Sync 대기
 }
 
+// 1. 디렉토리 구조만 빠르게 스캔 (지도 제작용)
+func doScanDirs(root string) {
+	ignore := map[string]bool{"node_modules": true, "target": true, ".git": true, "dist": true, "build": true, ".vibe": true, "venv": true, ".venv": true, "env": true, "__pycache__": true, ".cargo": true, ".rustup": true, ".claude": true, "runs": true, ".cache": true, "logs": true}
+	
+	filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil { return nil }
+		if d.IsDir() {
+			if ignore[d.Name()] { return filepath.SkipDir }
+			rel, _ := filepath.Rel(root, p)
+			if rel == "." { return nil }
+			fmt.Println(filepath.ToSlash(rel))
+		}
+		return nil
+	})
+}
+
 func main() {
 	if len(os.Args) < 3 { return }
 	cmd := os.Args[1]
 	switch cmd {
+	case "dirs": doScanDirs(os.Args[2])
 	case "scan": doScan(os.Args[2])
 	case "index": doIndex(os.Args[2], os.Args[3], os.Args[4])
 	}
