@@ -1,9 +1,28 @@
 from mcp.server.fastmcp import FastMCP
-from .core import sync_core, search_index, log_activity, find_project_root, get_recent
+from .core import sync_core, search_index, log_activity, find_project_root, get_recent, get_spy_context
 from pathlib import Path
 
 # Create the MCP Server instance
 mcp = FastMCP("Musu Indexer MCP")
+
+@mcp.tool()
+async def get_spy_logs(window_keyword: str, limit: int = 5) -> str:
+    """
+    Retrieve recently captured raw text from an external window (mechanical logs).
+    Use this to understand the current state of a chat or external tool.
+    """
+    project_root = find_project_root()
+    try:
+        results = get_spy_context(project_root, window_keyword, limit=limit)
+        if not results:
+            return f"No spy logs found for window matching: '{window_keyword}'."
+        
+        output = [f"Found {len(results)} recent snapshots for '{window_keyword}':"]
+        for r in results:
+            output.append(f"--- Timestamp: {r['timestamp']} ---\n{r['content']}\n")
+        return "\n".join(output)
+    except Exception as e:
+        return f"Database error. Please ensure the 'spy' command is running. ({e})"
 
 @mcp.tool()
 async def sync_workspace(scope: str = "all") -> str:

@@ -34,8 +34,24 @@ def init_db(project_root: Path):
     cursor.execute("""CREATE TABLE IF NOT EXISTS doc_sections (file_path TEXT, title TEXT, level INTEGER, content TEXT)""")
     cursor.execute("""CREATE TABLE IF NOT EXISTS code_symbols (file_path TEXT, name TEXT, kind TEXT, line_start INTEGER, signature TEXT)""")
     cursor.execute("""CREATE TABLE IF NOT EXISTS work_log (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT DEFAULT CURRENT_TIMESTAMP, action TEXT, details TEXT, status TEXT)""")
+    
+    # [New] Mechanical Spy Logging Table
+    cursor.execute("""CREATE TABLE IF NOT EXISTS raw_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        source TEXT,
+        content TEXT
+    )""")
+
     cursor.execute("DROP TABLE IF EXISTS search_index")
     cursor.execute("""CREATE VIRTUAL TABLE search_index USING fts5(path, title, content, type, tokenize='unicode61')""")
+    conn.commit()
+    conn.close()
+
+def cleanup_snapshots(project_root: Path, hours: int = 24):
+    """Purges raw snapshots older than the specified hours to prevent DB bloat."""
+    conn = get_db(project_root)
+    conn.execute("DELETE FROM raw_snapshots WHERE timestamp < datetime('now', '-' || ? || ' hours')", (hours,))
     conn.commit()
     conn.close()
 
@@ -251,6 +267,18 @@ def search_index(project_root: Path, query: str, limit: int = 15, exclude_patter
     ).fetchall()
     
     results = [{"path": r['path'], "title": r['title'], "type": r['type'], "snippet": r['match_snippet']} for r in res]
+    conn.close()
+    return results
+
+def get_spy_context(project_root: Path, source_keyword: str, limit: int = 5) -> list[dict]:
+    """Retrieves the most recent raw snapshots for a specific source."""
+    conn = get_db(project_root)
+    # Search by partial source match
+    res = conn.execute(
+        "SELECT timestamp, source, content FROM raw_snapshots WHERE source LIKE ? ORDER BY timestamp DESC LIMIT ?",
+        (f"%{source_keyword}%", limit)
+    ).fetchall()
+    results = [{"timestamp": r['timestamp'], "source": r['source'], "content": r['content']} for r in res]
     conn.close()
     return results
 

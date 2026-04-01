@@ -1,9 +1,10 @@
 import argparse
 import sys
 from pathlib import Path
-from .core import sync_core, search_index, log_activity, find_project_root, get_recent, sync_bottom_up
+from .core import sync_core, search_index, log_activity, find_project_root, get_recent, sync_bottom_up, get_spy_context
 from .server import mcp
 from .watcher import start_watcher
+from .spy_sink import start_spy_logging
 
 def main():
     parser = argparse.ArgumentParser(description="Musu Indexer: High-performance codebase indexer and MCP server")
@@ -16,6 +17,15 @@ def main():
     # Command: sync-map (Bottom-Up Strategy)
     map_parser = subparsers.add_parser("sync-map", help="Deep-first bottom-up sync strategy for massive projects")
     map_parser.add_argument("--scope", type=str, default="all", help="Scope of the sync")
+
+    # Command: spy (Mechanical Logger)
+    spy_parser = subparsers.add_parser("spy", help="Start the mechanical chat logger for a specific window")
+    spy_parser.add_argument("window", type=str, help="Window title keyword to watch")
+
+    # Command: spy-logs (View Logs)
+    spy_logs_parser = subparsers.add_parser("spy-logs", help="View recent mechanical spy logs")
+    spy_logs_parser.add_argument("window", type=str, help="Window title keyword")
+    spy_logs_parser.add_argument("--limit", type=int, default=3, help="Max entries to show")
 
     # Command: mcp (Run as MCP server)
     mcp_parser = subparsers.add_parser("mcp", help="Run the MCP server (stdio mode)")
@@ -56,6 +66,19 @@ def main():
         print(f"Executing Bottom-Up Sync at: {project_root}")
         result = sync_bottom_up(project_root, scope=args.scope)
         print(result)
+
+    elif args.command == "spy":
+        start_spy_logging(project_root, args.window)
+
+    elif args.command == "spy-logs":
+        results = get_spy_context(project_root, args.window, limit=args.limit)
+        if not results:
+            print(f"No logs found for '{args.window}'.")
+        else:
+            print(f"\n🕵️‍♂️ Recent Spy Logs for '{args.window}':")
+            for r in results:
+                print(f"[{r['timestamp']}]")
+                print(f"{r['content']}\n" + "-"*40)
 
     elif args.command == "watch":
         start_watcher(project_root, debounce_seconds=args.debounce)
