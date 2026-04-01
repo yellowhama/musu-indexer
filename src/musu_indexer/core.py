@@ -13,12 +13,8 @@ LINUX_BIN = str(PACKAGE_ROOT / "bin" / "musu-indexer-linux")
 INDEX_VERSION = 2
 
 def find_project_root(start_path: str = None) -> Path:
-    """Finds the root directory of the project by looking for .git or .musu_dev.db"""
-    curr = Path(start_path or os.getcwd()).resolve()
-    for parent in [curr] + list(curr.parents):
-        if (parent / ".git").exists() or (parent / ".musu_dev.db").exists():
-            return parent
-    return curr
+    """Strictly returns the current working directory as the project root."""
+    return Path(start_path or os.getcwd()).resolve()
 
 def get_db(project_root: Path):
     db_path = str(project_root / ".musu_dev.db")
