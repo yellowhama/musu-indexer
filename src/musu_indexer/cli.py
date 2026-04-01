@@ -28,6 +28,7 @@ def main():
     search_parser = subparsers.add_parser("search", help="Search the codebase using FTS5")
     search_parser.add_argument("query", type=str, help="The search query")
     search_parser.add_argument("--limit", type=int, default=15, help="Maximum number of results")
+    search_parser.add_argument("--exclude", nargs='+', help="Exclude patterns (e.g., tsx, node_modules, /tests/)")
 
     # Command: recent
     recent_parser = subparsers.add_parser("recent", help="View recently created or modified files")
@@ -60,7 +61,7 @@ def main():
         start_watcher(project_root, debounce_seconds=args.debounce)
 
     elif args.command == "search":
-        results = search_index(project_root, args.query, limit=args.limit)
+        results = search_index(project_root, args.query, limit=args.limit, exclude_patterns=args.exclude)
         if not results:
             print(f"No results found for '{args.query}'.")
         else:

@@ -223,16 +223,30 @@ def get_recent(project_root: Path, limit: int = 10) -> list[dict]:
     conn.close()
     return results
 
-def search_index(project_root: Path, query: str, limit: int = 15) -> list[dict]:
-    """Execute a Full-Text Search (FTS5) against the index with smart query expansion."""
+def search_index(project_root: Path, query: str, limit: int = 15, exclude_patterns: list[str] = None) -> list[dict]:
+    """Execute a Full-Text Search (FTS5) against the index with dynamic filtering."""
     conn = get_db(project_root)
     fts_query = QueryExpander.build_fts_query(query, max_terms=6)
     
     if not fts_query:
         return []
 
+    # Basic build-related filters
+    filters = ["path NOT LIKE '%target/%'", "path NOT LIKE '%node_modules/%'", "path NOT LIKE '%.fingerprint/%'"]
+    
+    # Add dynamic user-provided filters
+    if exclude_patterns:
+        for p in exclude_patterns:
+            # Handle extension filters (e.g., 'tsx' -> '%.tsx')
+            if not p.startswith('%') and not p.startswith('/'):
+                p = f'%.{p}'
+            filters.append(f"path NOT LIKE '{p}'")
+
+    filter_clause = " AND ".join(filters)
+
     res = conn.execute(
-        "SELECT path, title, type, snippet(search_index, -1, '<b>', '</b>', '...', 32) as match_snippet FROM search_index WHERE content MATCH ? LIMIT ?", 
+        f"SELECT path, title, type, snippet(search_index, -1, '<b>', '</b>', '...', 32) as match_snippet "
+        f"FROM search_index WHERE content MATCH ? AND {filter_clause} LIMIT ?", 
         (fts_query, limit)
     ).fetchall()
     

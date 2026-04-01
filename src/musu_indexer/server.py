@@ -20,14 +20,15 @@ async def sync_workspace(scope: str = "all") -> str:
         return f"Error syncing workspace: {e}"
 
 @mcp.tool()
-async def search_codebase(query: str, limit: int = 15) -> str:
+async def search_codebase(query: str, limit: int = 15, exclude: list[str] = None) -> str:
     """
     Search the project codebase and documentation using ultra-fast FTS5.
     Returns matched file paths, sections, and symbols.
+    You can use the 'exclude' parameter to filter out extensions or paths (e.g. ['tsx', 'json', 'node_modules']).
     """
     project_root = find_project_root()
     try:
-        results = search_index(project_root, query, limit=limit)
+        results = search_index(project_root, query, limit=limit, exclude_patterns=exclude)
         if not results:
             return f"No results found for '{query}'."
         
